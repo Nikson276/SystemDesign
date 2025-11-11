@@ -20,3 +20,11 @@
   * [03 Границы системы и контекст](./03_system_scope_and_context.md)
   * [05 Вид строительных блоков (микросервисы)](./05_building_block_view.md)
   * [06 Вид выполнения (сценарии использования)](./06_runtime_view.md)
+
+## Kroki test
+
+```plantuml
+@startuml
+A -> B : test
+@enduml
+```
