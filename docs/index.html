@@ -16,9 +16,43 @@
       <script>
         window.$docsify = {
           loadNavbar: true,
-          coverpage: true
+          coverpage: true,
+          kroki: {
+            langs: [
+              "actdiag",
+              "blockdiag",
+              "bpmn",
+              "bytefield",
+              "c4plantuml",
+              "d2",
+              "dbml",
+              "ditaa",
+              "erd",
+              "excalidraw",
+              "graphviz",
+              "mermaid",
+              "nomnoml",
+              "nwdiag",
+              "packetdiag",
+              "pikchr",
+              "plantuml",
+              "rackdiag",
+              "seqdiag",
+              "structurizr",
+              "svgbob",
+              "symbolator",
+              "tikz",
+              "vega",
+              "vegalite",
+              "wavedrom",
+              "wireviz",
+            ],
+            serverPath: "//kroki.io/"
+          }
         }
       </script>
       <script src="//cdn.jsdelivr.net/npm/docsify/lib/docsify.min.js"></script>
+      <!-- plugins -->
+      <script src="//unpkg.com/docsify-kroki"></script>
   </body>
 </html>
