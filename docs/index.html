@@ -1,24 +1,29 @@
+<!-- index.html -->
+
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset="UTF-8">
-  <title>Музыкальный сервис — Архитектура</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body>
-  <div id="app">Загрузка...</div>
+  <head>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta charset="UTF-8" />
+    <link
+      rel="stylesheet"
+      href="//cdn.jsdelivr.net/npm/docsify@4/themes/vue.css"
+    />
+  </head>
+  <body>
+    <div id="app">Загрузка ... </div>
   <script>
     window.$docsify = {
       name: 'Tunez Arch',
       repo: 'https://github.com/Nikson276/SystemDesign',
       loadSidebar: true,
       loadNavbar: true,
-      coverpage: true,
-      subMaxLevel: 2,
-      themeColor: '#3F51B5'
+      coverpage: false,
     }
   </script>
   <!-- <script src="//cdn.jsdelivr.net/npm/docsify@4"></script> -->
   <script src="//cdn.jsdelivr.net/npm/docsify/lib/docsify.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify-plantuml@1.0.2/dist/docsify-plantuml.min.js"></script>
 </body>
 </html>
