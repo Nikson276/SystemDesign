@@ -16,6 +16,8 @@ tags: [контекст, внешние-системы, C4, диаграмма]
 <details>
 <summary>Диаграмма C1</summary>
 
+![C1 level](./_media/image.png)
+
 ```plantuml
 @startuml
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
