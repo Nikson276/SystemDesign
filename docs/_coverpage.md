@@ -1,8 +1,8 @@
 <!-- _coverpage.md -->
 
-![logo](_media/icon.svg)
+![logo](_media/systemdesign.jpg)
 
-# docsify <small>3.5</small>
+# Powered by docsify <small>3.5</small>
 
 > A magical documentation site generator.
 
@@ -11,4 +11,4 @@
 - Multiple themes
 
 [GitHub](https://github.com/docsifyjs/docsify/)
-[Get Started](#docsify)
+[Get Started](./system_design_plan.md)
