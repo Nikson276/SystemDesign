@@ -20,6 +20,7 @@ tags: [требования, анализ, scope, discovery]
 | SLA                 | Service Level Agreement — соглашение об уровне обслуживания |
 | DRM                 | Digital Rights Management — система управления цифровыми правами |
 | CDN                 | Content Delivery Network — сеть доставки контента |
+| CDP                 | Customer Data Platform - это программная платформа, которая собирает и объединяет данные о клиентах из различных источников в единый, полный профиль |
 | NFR                 | Non-Functional Requirement — нефункциональное требование |
 | API                 | Application Programming Interface — интерфейс прикладного программирования |
 | SSO                 | Single Sign-On — единая точка входа |
