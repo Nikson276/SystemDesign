@@ -2,7 +2,7 @@
 
 ## System Design
 
-![logo](_media/systemdesign.jpg){width=200px}
+![logo](_media/systemdesign.jpg)
 
 ### Web. Микросервесная архитектура
 
