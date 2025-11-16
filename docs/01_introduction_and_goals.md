@@ -17,10 +17,10 @@ tags: [требования, анализ, scope, discovery]
 | DAU                 | Daily Active Users — количество уникальных пользователей в день |
 | MAU                 | Monthly Active Users — количество уникальных пользователей в месяц |
 | UGC                 | User-Generated Content — контент, загружаемый пользователями |
+| CDC / CDP           | Change Data Capture / Change Data Processing — это паттерн, который позволяет отслеживать изменения данных в источнике (insert/update/delete в Postgres) и передавать эти изменения в другие системы в реальном времени или почти в реальном времени |
 | SLA                 | Service Level Agreement — соглашение об уровне обслуживания |
 | DRM                 | Digital Rights Management — система управления цифровыми правами |
 | CDN                 | Content Delivery Network — сеть доставки контента |
-| CDP                 | Customer Data Platform - это программная платформа, которая собирает и объединяет данные о клиентах из различных источников в единый, полный профиль |
 | NFR                 | Non-Functional Requirement — нефункциональное требование |
 | API                 | Application Programming Interface — интерфейс прикладного программирования |
 | SSO                 | Single Sign-On — единая точка входа |

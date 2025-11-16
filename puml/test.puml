@@ -1,30 +1,34 @@
-
 @startuml
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+title Единый поток аутентификации (Соцсети + Email/Пароль)
 
-Person(user, "Пользователь", "Слушает музыку, создаёт плейлисты, оплачивает подписку")
-Person(artist, "Музыкант / Автор", "Загружает треки через админку")
+actor User as U
+participant "Frontend" as FE
+participant "Auth Service" as AS
+participant "OAuth Provider\n(Google/VK/Yandex)" as OP
+participant "Users Service" as US
 
-System_Boundary(tunec, "ТУНЕЦ") {
-  System(admin_ui, "Админка (UI + BFF)", "Веб-интерфейс для загрузки контента")
-  System(api_gateway, "API Gateway", "Единая точка входа, аутентификация, маршрутизация")
-}
+== Вход через соцсеть (OIDC) ==
+U -> FE: Нажимает "Войти через соцсеть"
+FE -> AS: Запрос на авторизацию через выбранного провайдера
+AS -> OP: Перенаправление (OIDC Authorization Request)
+OP -> U: Форма авторизации
+U -> OP: Ввод данных и подтверждение
+OP -> FE: Authorization Code (редирект)
+FE -> AS: Передача Authorization Code
+AS -> OP: Обмен Code на Access Token + ID Token
+OP -> AS: Токены + профиль (OIDC UserInfo)
+AS -> US: Create/Update пользователя с данными профиля
+US -> AS: Возвращает internal user_id
 
-System(ym, "Яндекс.Музыка", "Источник данных для импорта избранных треков")
-System(vk, "VK", "Источник данных для импорта избранных треков")
-System(sbp, "СБП", "Платёжная система")
-System(usdt, "USDT (криптовалюта)", "Альтернативный способ оплаты")
-System(yc, "Яндекс.Облако", "Инфраструктурный провайдер (Kafka, S3, PostgreSQL и т.д.)")
+== Вход по Email/Пароль ==
+U -> FE: Ввод email и пароль
+FE -> AS: Запрос логина (email, password)
+AS -> US: Запрос пользователя по email
+US -> AS: Возвращает профиль и password_hash
+AS -> AS: Проверка пароля (bcrypt/scrypt/argon2)
+AS -> US: Получение is_premium, region, plan_type
 
-Rel(user, api_gateway, "Использует", "HTTPS")
-Rel(artist, admin_ui, "Загружает треки", "HTTPS")
-Rel(admin_ui, api_gateway, "Вызывает Ingestion API", "HTTPS")
-
-Rel_L(api_gateway, ym, "Импорт по согласию", "OAuth + API")
-Rel_R(api_gateway, vk, "Импорт по согласию", "OAuth + API")
-
-Rel(api_gateway, sbp, "Инициирует платёж", "API")
-Rel(api_gateway, usdt, "Принимает крипто", "Blockchain API")
-
-Rel(tunec, yc, "Развёрнут в", "Инфраструктура")
+== Общий этап генерации JWT ==
+AS -> FE: Выдача JWT (user_id_internal, is_premium, plan_type, region)
+note right of AS: JWT — единый формат для всех способов входа. В системе используется внутренний user_id.
 @enduml
