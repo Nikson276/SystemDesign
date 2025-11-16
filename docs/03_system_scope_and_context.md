@@ -16,7 +16,7 @@ tags: [контекст, внешние-системы, C4, диаграмма]
 <details>
 <summary>Диаграмма C1</summary>
 
-![C1 level](./_media/image.png)
+![C1 level](./_media/c1_level.png)
 
 ```plantuml
 @startuml
