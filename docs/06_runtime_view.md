@@ -236,23 +236,49 @@ Indexer -> Redis: Invalidate cache entries
 
 ```plantuml
 @startuml
-participant "Scheduler" as cron
-participant "Recommendations Service" as rec
-database "PostgreSQL" as pg
-queue "Kafka" as kafka
+actor Пользователь
+participant "API Gateway" as gateway
+participant "Playback Service" as playback
+participant "Kafka" as kafka
+participant "Recommendations Service" as recs
+participant "ML Model / Batch Job" as ml
+participant "Redis (рекомендации)" as redis
 
-cron -> rec: Запуск суточного джоба (02:00 MSK)
-rec -> pg: SELECT user_id, track_id, timestamp FROM playback_events (последние 7 дней)
-pg --> rec: Данные истории
-rec -> rec: ML-модель (collaborative filtering / content-based)
-rec -> pg: Сохранить рекомендации: {user_id, [track_ids]}
-pg --> rec: OK
+== Воспроизведение трека ==
+Пользователь -> gateway: GET /stream/{track_id}
+gateway -> playback: Прокси на Playback Service
+playback --> gateway: audio_url
+gateway --> Пользователь: Аудио поток
 
-note right
-  При следующем запросе /recommendations
-  Catalog Service возвращает треки по ID.
+== Публикация события ==
+playback -> kafka: Publish PlaybackFinished(user_id, track_id)
+
+== Асинхронная генерация рекомендаций ==
+kafka -> recs: Consume PlaybackFinished
+recs -> ml: Запуск пересчёта персональных рекомендаций
+ml --> recs: Новый список 추천 (топ-20 треков)
+recs -> redis: PUT user:{id}:recommendations = [топ-20]
+redis --> recs: OK
+
+== Получение рекомендаций пользователем ==
+Пользователь -> gateway: GET /recommendations
+gateway -> redis: GET user:{id}:recommendations
+redis --> gateway: JSON список треков
+gateway --> Пользователь: Рекомендации (<200мс)
+
+note right of Пользователь
+  В UI пользователь сразу видит готовые рекомендации.
+  ML‑модель отработала в фоне после события PlaybackFinished.
 end note
 @enduml
 ```
 
-> Важно: рекомендации не генерируются в реальном времени — это offline-батч.
+> Пользователь получает рекомендации быстро — без обращения к ML при каждом запросе.
+>
+> ML пересчёт делается в фоне, триггерится событием из Kafka.
+>
+> Redis хранит ready‑to‑serve результат для API Gateway.
+> 
+> Конвейер асинхронный — выдерживает пик трафика без деградации latency.
+> 
+> Подход совместим как с batch‑ML (раз в N минут), так и с online‑ML (на каждое событие).
