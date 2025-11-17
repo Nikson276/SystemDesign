@@ -16,74 +16,109 @@ tags: [микросервисы, DDD, C4, контейнеры, Kafka]
 <details>
 <summary>Диаграмма C2</summary>
 
+![C2 level](_media/c2_level.png)
+
 ```plantuml
 @startuml
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
 
 Person(user, "Пользователь", "Слушает, ищет, создаёт плейлисты")
 Person(artist, "Автор", "Загружает треки")
+Person(admin, "Администратор", "Управляет контентом, обновляет метаданные")
 
 System_Boundary(tunec, "ТУНЕЦ") {
 
-  Container(admin_ui, "Админка (UI + BFF)", "TypeScript/React", "Веб-интерфейс для загрузки треков. Вызывает Ingestion API.")
-  Container(api_gateway, "API Gateway", "Go", "JWT-аутентификация, маршрутизация, rate limiting. Содержит флаг is_premium в токене.")
+    Container(api_gateway, "API Gateway", "Go", "Маршрутизация запросов, rate limiting, делегирование auth в Auth Service")
 
-  Container(ingestion, "Ingestion Service", "Go", "Приём и валидация аудиофайлов от авторов. Публикует TrackPublished в Kafka.")
-  Container(catalog, "Catalog Service", "Python", "Управление метаданными треков, альбомов, исполнителей. Хранит данные в PostgreSQL.")
-  Container(playback, "Playback Service", "Go", "Выдаёт URL аудиофайлов (прокси через CDN). Логирует прослушивания.")
-  Container(users, "Users Service", "Python", "Управление профилями, плейлистами, импортом из VK/Yandex.Музыки.")
-  Container(payments, "Payments Service", "Python", "Обработка подписок через СБП и USDT. Обновляет статус is_premium.")
-  Container(ads, "Ads Service", "Go", "Выдаёт рекламные ассеты каждые 7 минут для free-пользователей.")
-  Container(recommendations, "Recommendations Service", "Python", "Генерирует рекомендации раз в сутки на основе истории прослушиваний.")
+    Container_Boundary(auth_block, "Auth & Subscription Layer") {
+        Container(auth, "Auth Service", "Go/Python", "Регистрация, логин, OAuth, JWT/Refresh, валидация токена")
+        Container(subscription, "Subscription Service", "Python", "Управление подписками, шаги SAGA")
+        Container(notification, "Notification Service", "Python", "Email и push уведомления на события")
+        Container(payments, "Payments Service", "Python", "Обработка платежей через СБП и USDT")
+    }
 
-  ContainerDb(pg, "PostgreSQL", "Источник истины для: каталог, пользователи, плейлисты, подписки")
-  ContainerDb(es, "Elasticsearch", "Индекс для full-text search с фильтрацией")
-  ContainerDb(s3, "Object Storage (S3)", "Хранение аудиофайлов (MP3/FLAC)")
-  ContainerDb(redis, "Redis", "Кэш: is_premium, сессии, rate limiting")
+    Container_Boundary(content_block, "Content Layer") {
+        Container(catalog, "Catalog Service", "Python", "Метаданные треков, альбомы, исполнители (CQRS Read side)")
+        Container(ingestion, "Ingestion Service", "Go", "Загрузка и валидация аудиофайлов от авторов (CQRS Write side)")
+        Container(cdp, "CDP Service", "Java/Debezium", "Change Data Processing — отслеживание изменений в Postgres и публикация событий в Kafka")
+        Container(indexer, "Catalog Indexer Service", "Python", "Потребляет события треков, обновляет Elasticsearch и инвалидирует Redis")
+    }
 
-  Container(kafka, "Kafka", "Event backbone: TrackPublished, PaymentCompleted, PlaybackStarted и др.")
+    Container_Boundary(playback_block, "Playback Layer") {
+        Container(playback, "Playback Service", "Go", "Выдача CDN ссылок треков, логирование PlaybackStarted")
+    }
+
+    Container_Boundary(user_block, "User & Engagement Layer") {
+        Container(users, "User Service", "Python", "Профили пользователей, плейлисты")
+        Container(recommendations, "Recommendations Service", "Python", "Рекомендации на основе истории прослушиваний")
+        Container(ads, "Ads Service", "Go", "Реклама для free-пользователей")
+    }
+
+    ContainerDb(pg, "PostgreSQL", "Write модель: каталог, пользователи, подписки, платежи")
+    ContainerDb(es, "Elasticsearch", "Read модель: поиск по каталогу")
+    ContainerDb(s3, "Object Storage (S3)", "Хранение аудиофайлов")
+    ContainerDb(redis, "Redis", "Кэш JWT, is_premium, горячие выборки поиска, rate limiting")
+    Container(kafka, "Kafka", "Event backbone: TrackPublished, PaymentCompleted, SubscriptionActivated, UserUpdated")
 }
 
-' Внешние зависимости
-System(ym, "Яндекс.Музыка", "Импорт треков")
-System(vk, "VK", "Импорт треков")
+System(google_oauth, "Google OAuth", "Внешняя авторизация OAuth2")
+System(vk_oauth, "VK OAuth", "Внешняя авторизация OAuth2")
+System(yandex_oauth, "Yandex OAuth", "Внешняя авторизация OAuth2")
 System(sbp, "СБП", "Платежи")
 System(usdt, "USDT", "Криптоплатежи")
+System(debezium, "Debezium", "CDC listener для Postgres")
+System(events_stats, "Events Statistics Service", "Сбор аналитики воспроизведений и поведения пользователей")
 
-' Связи пользователя
-Rel(user, api_gateway, "HTTPS", "Все запросы")
-Rel(artist, admin_ui, "HTTPS", "Загрузка треков")
+Rel(kafka, events_stats, "Consume", "PlaybackStarted, PlaybackFinished")
 
-' Внутренние связи
-Rel(admin_ui, ingestion, "HTTP", "POST /tracks")
-Rel(api_gateway, catalog, "HTTP", "GET /tracks, /search")
-Rel(api_gateway, users, "HTTP", "GET /playlists, POST /import")
-Rel(api_gateway, payments, "HTTP", "POST /subscribe")
-Rel(api_gateway, ads, "HTTP", "GET /ad")
+Rel(user, api_gateway, "HTTPS", "Login/Register, запросы с JWT")
+Rel(artist, api_gateway, "HTTPS", "Загрузка треков (через Ingestion)")
+Rel(admin, pg, "SQL/ORM", "Изменение метаданных напрямую или через админку")
+
+Rel(api_gateway, auth, "HTTP", "/login, /register, /refresh")
+Rel(auth, google_oauth, "OAuth2/OpenID Connect")
+Rel(auth, vk_oauth, "OAuth2/OpenID Connect")
+Rel(auth, yandex_oauth, "OAuth2/OpenID Connect")
+Rel(auth, redis, "Set/Get", "Кэш токенов и claims")
+Rel(api_gateway, redis, "GET", "Проверка токена и флага is_premium")
+
+Rel(api_gateway, catalog, "HTTP", "GET /tracks, поиск")
+Rel(api_gateway, ingestion, "HTTP", "POST /tracks")
 Rel(api_gateway, playback, "HTTP", "GET /stream/{id}")
+Rel(api_gateway, users, "HTTP", "GET /playlists")
+Rel(api_gateway, ads, "HTTP", "GET /ad")
 
-' Сервис → Kafka
-Rel(ingestion, kafka, "Публикует", "TrackPublished")
-Rel(payments, kafka, "Публикует", "PaymentCompleted")
-Rel(playback, kafka, "Публикует", "PlaybackStarted")
+Rel(api_gateway, payments, "HTTP", "POST /subscribe")
+Rel(payments, kafka, "Publish", "PaymentCompleted / PaymentFailed")
+Rel(kafka, subscription, "Consume", "PaymentCompleted → SubscriptionActivated; PaymentFailed → стоп процесса")
+Rel(subscription, kafka, "Publish", "SubscriptionActivated / SubscriptionFailed")
+Rel(kafka, notification, "Consume", "SubscriptionActivated → письмо пользователю")
+Rel(kafka, users, "Consume", "SubscriptionActivated → обновление is_premium")
+Rel(users, kafka, "Publish", "UserUpdated (is_premium)")
+Rel(kafka, auth, "Consume", "UserUpdated → обновление JWT/Refresh")
 
-' Kafka → подписчики
-Rel(kafka, catalog, "Подписка", "TrackPublished → обогащение метаданных")
-Rel(kafka, recommendations, "Подписка", "PlaybackStarted, PaymentCompleted")
-Rel(kafka, users, "Подписка", "PaymentCompleted → обновление профиля")
+Rel(ingestion, kafka, "Publish", "TrackPublished")
+Rel(playback, kafka, "Publish", "PlaybackStarted")
 
-' Хранилища
+Rel(kafka, catalog, "Consume", "TrackPublished → сохранение метаданных")
+Rel(kafka, recommendations, "Consume", "PlaybackStarted, PaymentCompleted")
+
 BiRel(catalog, pg, "Чтение/запись")
 BiRel(users, pg, "Чтение/запись")
+BiRel(subscription, pg, "Чтение/запись")
 BiRel(payments, pg, "Чтение/запись")
 
-Rel(catalog, es, "Полнотекстовый индекс", "Sync via batch")
+Rel(catalog, es, "Batch sync", "Индекс поиска")
 Rel(playback, s3, "Чтение аудиофайлов", "Pre-signed URL / CDN")
-Rel(api_gateway, redis, "Кэш JWT и is_premium", "GET/SET")
+Rel(api_gateway, redis, "Кэш JWT/is_premium", "GET/SET")
 
-' Интеграции
-Rel(users, ym, "OAuth + API", "Импорт избранного")
-Rel(users, vk, "OAuth + API", "Импорт избранного")
+Rel(cdp, debezium, "Подписка на WAL", "Logical replication")
+Rel(debezium, cdp, "CDC Events", "TrackUpdated/TrackDeleted")
+Rel(cdp, kafka, "Publish", "CDC-based events для индексации")
+Rel(kafka, indexer, "Consume", "TrackPublished, TrackUpdated, TrackDeleted")
+Rel(indexer, es, "Update index", "Добавление/обновление треков")
+Rel(indexer, redis, "Invalidate cache", "По ключам треков и поисковым запросам")
+
 Rel(payments, sbp, "Open API", "Инициация платежа")
 Rel(payments, usdt, "Webhook + API", "Подтверждение транзакции")
 
@@ -92,28 +127,39 @@ Rel(payments, usdt, "Webhook + API", "Подтверждение транзак�
 
 </details>
 
-## Описание контейнеров
+## 📦 Описание контейнеров
 
-| Контейнер                  | Ответственность                                                                 | Технологии        | Хранилище                                      |
-|---------------------------|----------------------------------------------------------------------------------|-------------------|------------------------------------------------|
-| **API Gateway**           | Единая точка входа, аутентификация, маршрутизация, rate limiting                | Go                | Redis (кэш `is_premium`, сессий)              |
-| **Ingestion Service**     | Приём, валидация и транскодирование аудиофайлов от авторов                     | Go                | S3 (временное хранение → перемещение в каталог), Kafka |
-| **Catalog Service**       | Управление треками, альбомами, исполнителями, жанрами                          | Python            | PostgreSQL (источник истины), Elasticsearch (индекс поиска) |
-| **Playback Service**      | Выдача URL аудиофайлов, логирование прослушиваний                              | Go                | S3 + CDN, Kafka (`PlaybackStarted`)            |
-| **Users Service**         | Профили, плейлисты, импорт из VK / Яндекс.Музыки                               | Python            | PostgreSQL                                     |
-| **Payments Service**      | Обработка подписок, интеграция с СБП / USDT                                    | Python            | PostgreSQL, Kafka (`PaymentCompleted`)         |
-| **Ads Service**           | Выдача рекламных ассетов каждые 7 минут                                        | Go                | —                                              |
-| **Recommendations Service** | Суточные батчи рекомендаций на основе истории                                | Python            | PostgreSQL (чтение прослушиваний), Kafka (подписка) |
-| **Админка (UI + BFF)**    | Веб-интерфейс для авторов                                                      | TypeScript/React  | —                                              |
+|Контейнер/Система|Ответственность|Технологии|Хранилище / Интеграции|
+|---|---|---|---|
+|**API Gateway**|Единая точка входа: аутентификация, маршрутизация, rate limiting, проверка флагов `is_premium`|Go|Redis (кэш сессий, токенов, `is_premium`)|
+|**Ingestion Service**|Приём, валидация и транскодирование аудиофайлов от авторов (CQRS Write side)|Go|S3 (временное хранение → каталог), PostgreSQL (метаданные), Kafka (`TrackPublished`)|
+|**Catalog Service**|Управление метаданными треков, альбомов, исполнителей (CQRS Read side)|Python|PostgreSQL (источник истины), Elasticsearch (поисковый индекс)|
+|**CDP Service**|Change Data Processing: ловит изменения в PostgreSQL (Debezium CDC) и отправляет события в Kafka|Java/Debezium|PostgreSQL (WAL-репликация → CDC Events)|
+|**Catalog Indexer Service**|Консюмит события треков (TrackPublished, TrackUpdated), обновляет Elasticsearch, инвалидирует Redis|Python|Elasticsearch, Redis (инвалидация кэшей поиска)|
+|**Playback Service**|Выдача пред‑подписанных URL к аудиофайлам через CDN, логирование событий воспроизведения|Go|S3/CDN, Kafka (`PlaybackStarted`, `PlaybackFinished`)|
+|**User Service**|Профили, плейлисты, импорт избранных треков из VK / Яндекс.Музыки|Python|PostgreSQL, Kafka (`UserUpdated`)|
+|**Payments Service**|Обработка платежей/подписок, интеграция с СБП / USDT|Python|PostgreSQL, Kafka (`PaymentCompleted`, `PaymentFailed`)|
+|**Subscription Service**|Логика подписок, пошаговая SAGA при активации/отказе|Python|PostgreSQL, Kafka (`SubscriptionActivated`, `SubscriptionFailed`)|
+|**Notification Service**|Отправка Email и push-уведомлений на события|Python|— (провайдеры уведомлений)|
+|**Ads Service**|Выдача рекламных ассетов пользователям без подписки|Go|—|
+|**Recommendations Service**|Рекомендации на основе истории прослушиваний (batch jobs + события)|Python|PostgreSQL (история прослушиваний), Kafka (PlaybackStarted)|
+|**Админка (UI + BFF)**|Веб-интерфейс для авторов и администраторов|TypeScript/React|—|
+|**Events Statistics Service** 🔹|Внешний сервис аналитики воспроизведений — потребляет Playback события из Kafka|(внешний)|Собственное хранилище статистики (вне границ «Тунец»)|
 
-## Ключевые принципы
-> Event-Driven: все важные события (TrackPublished, PaymentCompleted, PlaybackStarted) публикуются в Kafka.
-> 
-> Источник истины: PostgreSQL — единственное хранилище для транзакционных данных.
-> 
-> Read-оптимизация: Elasticsearch используется только для поиска, синхронизация — асинхронная.
-> 
-> Клиент решает о рекламе: флаг is_premium в JWT → плеер на стороне клиента вставляет рекламу или нет.
-> 
-> CDN: аудиофайлы доставляются через CDN поверх Yandex Object Storage (S3-совместимого).
+---
 
+## 📌 Ключевые принципы
+
+> **Event‑Driven архитектура:** все ключевые бизнес‑события (`TrackPublished`, `TrackUpdated`, `PlaybackStarted`, `PaymentCompleted`) публикуются в Kafka; внешние системы (например, Events Statistics) получают доступ через потребление топиков.
+> 
+> **CQRS:** Write‑модель (PostgreSQL + Kafka) отделена от Read‑модели (Elasticsearch + Redis). Синхронизация поискового индекса выполняется асинхронно через Catalog Indexer и CDP Service (Debezium CDC).
+> 
+> **Источник истины:** PostgreSQL — единственное хранилище для транзакционных данных, Read‑модель всегда пересчитывается на его основе.
+> 
+> **Read‑оптимизация:** Elasticsearch используется только для поиска; Redis — для горячих выборок и хранения признаков (например, `is_premium`).
+> 
+> **Логика показа рекламы на клиенте:** флаг `is_premium` передаётся в JWT, плеер на стороне клиента решает, вставлять рекламу или нет.
+> 
+> **CDN готовность:** аудиофайлы хранятся в Object Storage (S3‑совместимом), доставляются через CDN;
+> 
+> **Внешняя аналитика:** события воспроизведения направляются в внешний Events Statistics Service, интеграция построена через Kafka, что обеспечивает надёжность и слабую связанность.

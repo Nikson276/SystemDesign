@@ -16,37 +16,47 @@ tags: [контекст, внешние-системы, C4, диаграмма]
 <details>
 <summary>Диаграмма C1</summary>
 
-![C1 level](./_media/image.png)
+![C1 level](./_media/c1_level.png)
 
 ```plantuml
 @startuml
-!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
 
-Person(user, "Пользователь", "Слушает музыку, создаёт плейлисты, оплачивает подписку")
-Person(artist, "Музыкант / Автор", "Загружает треки через админку")
+Person(user, "Пользователь", "Слушает музыку, ищет треки, создаёт плейлисты, оплачивает подписку")
+Person(artist, "Музыкант / Автор", "Загружает треки через админку или API")
+Person(admin, "Администратор контента", "Модерирует и обновляет метаданные треков")
 
-System_Boundary(tunec, "ТУНЕЦ") {
-  System(admin_ui, "Админка (UI + BFF)", "Веб-интерфейс для загрузки контента")
-  System(api_gateway, "API Gateway", "Единая точка входа, аутентификация, маршрутизация")
+System_Boundary(tunec, "Система «Тунец»") {
+  System(api_gateway, "API Gateway", "Единая точка входа: авторизация, маршрутизация, rate limiting")
+  System(admin_ui, "Админка (UI + BFF)", "Веб‑интерфейс для загрузки и управления контентом")
 }
 
-System(ym, "Яндекс.Музыка", "Источник данных для импорта избранных треков")
-System(vk, "VK", "Источник данных для импорта избранных треков")
-System(sbp, "СБП", "Платёжная система")
-System(usdt, "USDT (криптовалюта)", "Альтернативный способ оплаты")
-System(yc, "Яндекс.Облако", "Инфраструктурный провайдер (Kafka, S3, PostgreSQL и т.д.)")
+System(yc, "Яндекс.Облако", "Инфраструктура (Kafka, S3, PostgreSQL, Elasticsearch, Redis)")
+System(ym, "Яндекс.Музыка", "Источник избранных треков для импорта")
+System(vk, "VK", "Источник избранных треков для импорта")
+System(google_oauth, "Google OAuth", "Внешняя авторизация OAuth2")
+System(vk_oauth, "VK OAuth", "Внешняя авторизация OAuth2")
+System(yandex_oauth, "Yandex OAuth", "Внешняя авторизация OAuth2")
+System(sbp, "СБП", "Платёжная система (QR/Redirect)")
+System(usdt, "USDT", "Криптовалютные платежи через блокчейн")
+System(events_stats, "Events Statistics Service", "Внешний сервис аналитики воспроизведений")
 
-Rel(user, api_gateway, "Использует", "HTTPS")
+Rel(user, api_gateway, "Использует", "HTTPS / JSON API")
 Rel(artist, admin_ui, "Загружает треки", "HTTPS")
 Rel(admin_ui, api_gateway, "Вызывает Ingestion API", "HTTPS")
 
-Rel_L(api_gateway, ym, "Импорт по согласию", "OAuth + API")
-Rel_R(api_gateway, vk, "Импорт по согласию", "OAuth + API")
+Rel(api_gateway, ym, "Импорт избранных треков", "OAuth + API")
+Rel(api_gateway, vk, "Импорт избранных треков", "OAuth + API")
+
+Rel(api_gateway, google_oauth, "Аутентификация", "OAuth2/OpenID Connect")
+Rel(api_gateway, vk_oauth, "Аутентификация", "OAuth2/OpenID Connect")
+Rel(api_gateway, yandex_oauth, "Аутентификация", "OAuth2/OpenID Connect")
 
 Rel(api_gateway, sbp, "Инициирует платёж", "API")
-Rel(api_gateway, usdt, "Принимает крипто", "Blockchain API")
+Rel(api_gateway, usdt, "Принимает крипто‑платёж", "Blockchain API")
 
-Rel(tunec, yc, "Развёрнут в", "Инфраструктура")
+Rel(tunec, yc, "Развёрнут в инфраструктуре", "Hosting / Cloud Services")
+Rel(api_gateway, events_stats, "Отправка событий воспроизведения", "Kafka Consumer или API")
 @enduml
 ```
 
@@ -61,7 +71,6 @@ Rel(tunec, yc, "Развёрнут в", "Инфраструктура")
 > Вне границ:
 > 
 > платёжные системы, соцсети, облачный провайдер (как внешний сервис, хотя хостинг — внутри его экосистемы).
-
 
 ## User Story
 
