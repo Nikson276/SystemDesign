@@ -7,7 +7,7 @@ date: 2025-11-06
 tags: [сценарии, runtime, диаграммы-последовательности, PlantUML]
 ---
 
-# Вид выполнения (сценарии использования)
+## Вид выполнения (сценарии использования)
 
 Ниже описаны ключевые сценарии взаимодействия компонентов в runtime. Каждый сценарий соответствует одной или нескольким [user story](./03_system_scope_and_context.md#user-story) и отражает поведение системы в production-условиях.
 
@@ -16,13 +16,12 @@ tags: [сценарии, runtime, диаграммы-последователь�
 **Связанные user story:** №12
 
 > **Через Соцсети (Google, VK, Yandex)**
-> 
+>
 > **Описание:** Пользователь нажимает кнопку "Войти через соцсеть" на фронтенде, система перенаправляет его на страницу авторизации выбранного провайдера (Google, VK, Yandex)
-> 
+>
 > **Через Email + Пароль**
-> 
+>
 > **Описание:** Пользователь вводит email и пароль, система проверяет учетные данные и возвращает JWT.
-
 
 ![Аутентификация](./_media/auth_secuence.png)
 
@@ -89,30 +88,45 @@ note right of AS: JWT — единый формат для всех способ
 
 **Описание**: Пользователь без премиум-подписки запрашивает воспроизведение трека. Система возвращает URL аудиофайла и рекламного ассета каждые 7 минут.
 
+![Player free](./_media/player_free_seq.png)
+
 ```plantuml
 @startuml
 actor Пользователь
 participant "API Gateway" as gateway
+participant "Redis (кэш is_premium)" as redis
 participant "Playback Service" as playback
+participant "Kafka" as kafka
 participant "Ads Service" as ads
-participant "Object Storage (CDN)" as cdn
+participant "Object Storage (S3/CDN)" as cdn
+participant "Events Statistics Service" as stats
 
-Пользователь -> gateway: GET /stream/{track_id} (JWT без is_premium)
-gateway -> playback: Прокси-запрос
-playback -> cdn: Получить pre-signed URL
-cdn --> playback: URL аудио
-playback --> gateway: Ответ с URL
+Пользователь -> gateway: GET /stream/{track_id} (JWT)
+gateway -> redis: Проверка is_premium по user_id
+redis --> gateway: false (free аккаунт)
+
+gateway -> playback: GET /stream/{track_id}
+playback -> cdn: Запрос pre-signed URL
+cdn --> playback: Возврат аудио URL
+
+playback -> kafka: Publish PlaybackStarted
+kafka -> stats: Consume PlaybackStarted (сбор аналитики)
+kafka -> recommendations: Consume PlaybackStarted (учёт в подборке рекомендаций)
+
+playback --> gateway: audio_url
 
 gateway -> ads: GET /ad
-ads --> gateway: Рекламный ассет (аудио/видео)
-gateway --> Пользователь: Ответ: {audio_url, ad_url, interval=420s}
+ads --> gateway: ad_url (a/v креатив)
 
-note right
-  Клиентский плеер сначала проигрывает рекламу,
-  затем — трек. Через 7 минут — снова реклама.
+gateway --> Пользователь: { audio_url, ad_url, interval=420s }
+
+note right of Пользователь
+  Плеер сначала проигрывает рекламу,
+  затем трек. Через 7 минут — повторная вставка рекламы.
 end note
 @enduml
 ```
+
 > Примечание: Решение о показе рекламы принимается на стороне клиента на основе отсутствия флага is_premium в JWT.
 
 ## Сценарий 2: Пользователь оформляет премиум-подписку
@@ -121,37 +135,56 @@ end note
 
 **Описание:** Пользователь инициирует оплату через СБП. После успешного платежа его статус обновляется, и он получает доступ без рекламы.
 
+![subscribtions SAGA](./_media/saga_subscribtion_sec.png)
+
 ```plantuml
 @startuml
-actor Пользователь
-participant "API Gateway" as gateway
-participant "Payments Service" as payments
-participant "СБП" as sbp
-participant "Users Service" as users
-queue "Kafka" as kafka
+title SAGA Choreography — Подписка и обновление токена
 
-Пользователь -> gateway: POST /subscribe {method: "SBP"}
-gateway -> payments: Создать платёж
-payments -> sbp: Инициировать платёж (Open API)
-sbp --> payments: Подтверждение (payment_id)
-payments -> kafka: Опубликовать PaymentCompleted {user_id, status=success}
-payments --> gateway: Ответ: "Ожидайте подтверждения"
-gateway --> Пользователь: Ссылка на СБП (deep link)
+actor User
+participant "API Gateway" as API
+participant "Payments Service" as Payments
+participant "Kafka" as Kafka
+participant "Subscription Service" as Subscr
+participant "Notification Service" as Notify
+participant "User Service" as UserSrv
+participant "Auth Service" as Auth
+participant "Redis" as Redis
 
-... Платёж подтверждён в СБП ...
+== Инициирование подписки ==
+User -> API: POST /subscribe
+API -> Payments: HTTP POST /subscribe
+Payments -> Payments: Обработка платежа (СБП или USDT)
 
-sbp -> payments: Webhook: payment success
-payments -> kafka: PaymentCompleted (финальный)
-kafka -> users: Подписка на PaymentCompleted
-users -> users: Обновить is_premium = true в БД
-users -> gateway: (опционально) уведомление
+alt Платёж успешен
+    Payments -> Kafka: Publish PaymentCompleted
+    Kafka -> Subscr: Consume PaymentCompleted
+    Subscr -> Subscr: Обновление статуса подписки (is_premium=true)
+    Subscr -> Kafka: Publish SubscriptionActivated
+    Kafka -> Notify: Consume SubscriptionActivated
+    Notify -> User: Email / Push уведомление об активации
+    Kafka -> UserSrv: Consume SubscriptionActivated
+    UserSrv -> UserSrv: Обновление профиля (is_premium=true)
+    UserSrv -> Kafka: Publish UserUpdated (is_premium=true)
+    Kafka -> Auth: Consume UserUpdated
+    Auth -> Redis: Обновление JWT payload (is_premium=true) или refresh-токена
+else Платёж неуспешен
+    Payments -> Kafka: Publish PaymentFailed
+    Kafka -> Subscr: Consume PaymentFailed
+    Subscr -> Subscr: Запись ошибки (is_premium=false)
+    Subscr -> Kafka: Publish SubscriptionFailed
+    Kafka -> Notify: Consume SubscriptionFailed
+    Notify -> User: Email / Push уведомление об отказе
+end
 
-note right
-  При следующем запросе JWT будет содержать
-  is_premium = true → клиент отключит рекламу.
-end note
 @enduml
 ```
+
+> В шаге `Payments: Обработка платежа (СБП или USDT)` - обернуты детали взаимодействия с платежными системами, которые вне контура нашего приложения и поэтому это для наглядности пропустили.
+>
+> - Payments -> ExternalPaymentForm : Отдаём форму/QR/redirect
+> - ExternalPaymentForm -> Payments : Webhook/Callback c результатом
+> - Payments -> Kafka : PaymentCompleted / PaymentFailed
 
 ## Сценарий 3: Автор загружает новый трек через админку
 
@@ -159,36 +192,41 @@ end note
 
 **Описание:** Автор загружает аудиофайл и метаданные. Трек сохраняется, обрабатывается и публикуется в каталоге через событие.
 
+![Add Track](_media/ingestion_add_track_seq.png)
+
 ```plantuml
 @startuml
-actor Автор
-participant "Админка (BFF)" as admin
-participant "Ingestion Service" as ingestion
-participant "Object Storage" as s3
-queue "Kafka" as kafka
-participant "Catalog Service" as catalog
-database "PostgreSQL" as pg
-database "Elasticsearch" as es
+title CQRS c CDP для синка Postgres -> Elasticsearch
 
-Автор -> admin: Загрузить файл + метаданные
-admin -> ingestion: POST /tracks (multipart)
-ingestion -> s3: Сохранить аудио (временный ключ)
-s3 --> ingestion: OK
-ingestion -> ingestion: Валидация, транскодирование (если нужно)
-ingestion -> pg: Сохранить черновик трека
-pg --> ingestion: track_id
-ingestion -> kafka: TrackPublished {track_id, status=published}
-ingestion --> admin: OK
-admin --> Автор: "Трек опубликован!"
+actor Admin
+participant "Admin UI" as AdminUI
+participant "Ingestion/Catalog Command API" as CommandAPI
+participant "Postgres (Write Model)" as PG
+participant "Kafka" as Kafka
+participant "CDP Capture Service" as CDP
+participant "Catalog Indexer Service" as Indexer
+participant "ElasticSearch (Read Model)" as ES
+participant "Redis Cache" as Redis
 
-kafka -> catalog: Подписка на TrackPublished
-catalog -> pg: Загрузить метаданные трека
-catalog -> es: Обновить поисковый индекс
+== Новый трек ==
+Admin -> CommandAPI: Добавить трек
+CommandAPI -> PG: INSERT track (метаданные)
+CommandAPI -> Kafka: Publish TrackPublished
+Kafka -> Indexer: Consume TrackPublished
+Indexer -> ES: Index new track
+Indexer -> Redis: Invalidate cache entries
+
+== Обновление трека через админку напрямую ==
+AdminUI -> PG: UPDATE track
+PG -> CDP: Change Data Capture event (via Debezium)
+CDP -> Kafka: Publish TrackUpdated
+Kafka -> Indexer: Consume TrackUpdated
+Indexer -> ES: Update track index
+Indexer -> Redis: Invalidate cache entries
 @enduml
 ```
 
->  Трек становится доступен в поиске и каталоге после индексации в Elasticsearch.
-
+> Трек становится доступен в поиске и каталоге после индексации в Elasticsearch.
 
 ## Сценарий 4: Система формирует суточные рекомендации
 
@@ -218,4 +256,3 @@ end note
 ```
 
 > Важно: рекомендации не генерируются в реальном времени — это offline-батч.
-

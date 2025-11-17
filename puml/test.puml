@@ -1,34 +1,34 @@
 @startuml
-title Единый поток аутентификации (Соцсети + Email/Пароль)
+actor Пользователь
+participant "API Gateway" as gateway
+participant "Redis (кэш is_premium)" as redis
+participant "Playback Service" as playback
+participant "Kafka" as kafka
+participant "Ads Service" as ads
+participant "Object Storage (S3/CDN)" as cdn
+participant "Events Statistics Service" as stats
 
-actor User as U
-participant "Frontend" as FE
-participant "Auth Service" as AS
-participant "OAuth Provider\n(Google/VK/Yandex)" as OP
-participant "Users Service" as US
+Пользователь -> gateway: GET /stream/{track_id} (JWT)
+gateway -> redis: Проверка is_premium по user_id
+redis --> gateway: false (free аккаунт)
 
-== Вход через соцсеть (OIDC) ==
-U -> FE: Нажимает "Войти через соцсеть"
-FE -> AS: Запрос на авторизацию через выбранного провайдера
-AS -> OP: Перенаправление (OIDC Authorization Request)
-OP -> U: Форма авторизации
-U -> OP: Ввод данных и подтверждение
-OP -> FE: Authorization Code (редирект)
-FE -> AS: Передача Authorization Code
-AS -> OP: Обмен Code на Access Token + ID Token
-OP -> AS: Токены + профиль (OIDC UserInfo)
-AS -> US: Create/Update пользователя с данными профиля
-US -> AS: Возвращает internal user_id
+gateway -> playback: GET /stream/{track_id}
+playback -> cdn: Запрос pre-signed URL
+cdn --> playback: Возврат аудио URL
 
-== Вход по Email/Пароль ==
-U -> FE: Ввод email и пароль
-FE -> AS: Запрос логина (email, password)
-AS -> US: Запрос пользователя по email
-US -> AS: Возвращает профиль и password_hash
-AS -> AS: Проверка пароля (bcrypt/scrypt/argon2)
-AS -> US: Получение is_premium, region, plan_type
+playback -> kafka: Publish PlaybackStarted
+kafka -> stats: Consume PlaybackStarted (сбор аналитики)
+kafka -> recommendations: Consume PlaybackStarted (учёт в подборке рекомендаций)
 
-== Общий этап генерации JWT ==
-AS -> FE: Выдача JWT (user_id_internal, is_premium, plan_type, region)
-note right of AS: JWT — единый формат для всех способов входа. В системе используется внутренний user_id.
+playback --> gateway: audio_url
+
+gateway -> ads: GET /ad
+ads --> gateway: ad_url (a/v креатив)
+
+gateway --> Пользователь: { audio_url, ad_url, interval=420s }
+
+note right of Пользователь
+  Плеер сначала проигрывает рекламу,
+  затем трек. Через 7 минут — повторная вставка рекламы.
+end note
 @enduml
