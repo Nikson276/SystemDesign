@@ -1132,3 +1132,7 @@ Query id: 9420634e-6c7b-4c50-8e56-4b6bdc30d745
 1 row in set. Elapsed: 0.216 sec. Processed 1.95 million rows, 43.43 MB (9.05 million rows/s., 201.36 MB/s.)
 Peak memory usage: 204.72 MiB.
 ```
+
+
+## [SUMMARY](./ess_summary.md)
+## [НАЗАД](./ess.md)
