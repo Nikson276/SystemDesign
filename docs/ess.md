@@ -43,18 +43,34 @@ ESS это микросервис для хранения событий с ис
 
 ## Техническая реализация
 
-### Запуск
+### Запуск сервиса
 
-Kafka
+Через .sh скрипт
 
 ```bash
-docker-compose up -d
+./start.sh
+```
+или вручную 
+
+```bash
+# В корне ESS/
+docker compose up -d          # запустить всё
+docker compose --profile consumers up -d  # Запустить консьюмеры отдельно
+docker compose logs -f        # смотреть логи
+docker compose stats          # смотреть метрики контейнеров
+docker compose down -v        # остановить и удалить данные
 ```
 
-Fast API
+FastAPI: http://localhost:8000
+Kafka UI: http://localhost:8080
+ClickHouse HTTP: http://localhost:8123
+
+### Запуск тестов
+
+Запускаем внутри сети докер, в временном контейнере
 
 ```bash
-python -m ess.app.main
+docker compose run --rm k6
 ```
 
 ### Sequence Diagram: Event Flow
@@ -86,10 +102,6 @@ python -m ess.app.main
     FastAPI-->>Client: JSON list
 @enduml
 ```
-
-### [Схемы Данных Событий Kafka](./event-schema.md)
-
-### [Схема данных хранилища Clickhouse](./clickhouse-schema.md)
 
 
 ### Лог задач
@@ -135,7 +147,7 @@ python -m ess.app.main
 - Сделать доку с конфигом - и резульат из К6
 - Сентри для аналитики результатов
 
-Ревью 1:
+Ревью 1 и 2:
 
 - [x] Переключить синхронный дравер кафки на ассинхронный драйвер и перезамерить
 - [x] Вернуть FastAPI на один инстанс с воркерами = ядрам (не более, тут не выйграшь)
