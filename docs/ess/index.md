@@ -146,6 +146,6 @@ python -m ess.app.main
 
 ## Load test log
 
-### [Test log all](./load-test-log-01.md)
+### [Test log all](../ess/load-test-log-01.md)
 
-### [Summary test results](./summary_load_test.md)
+### [Summary test results](../ess/summary_load_test.md)
